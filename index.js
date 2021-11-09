@@ -8,6 +8,7 @@ var authorizeRouter = require('./routes/authorize');
 var topicRouter = require('./routes/topic');
 var meetingRouter = require('./routes/meeting');
 var chatBotAccessTokenRetriever = require('./routes/chatbotAccessToken');
+var oAuth2AccessTokenRetriever = require('./routes/oAuth2AccessToken');
 app.get('/', (req, res) => {
   res.send('Hello! This is a test API for Impromptu Zoom Chatbot!');
 });
@@ -74,6 +75,7 @@ app.post('/deauthorize', (req, res) => {
 });
 app.use('/meeting', meetingRouter);
 app.use(chatBotAccessTokenRetriever);
+app.use(oAuth2AccessTokenRetriever);
 app.use('/impromptu', topicRouter);
 app.listen(port, () =>
   console.log(`Impromptu Chatbot for Zoom listening on port ${port}!`)
