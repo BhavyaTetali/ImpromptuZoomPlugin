@@ -1,7 +1,7 @@
 var express = require('express');
 var router = express.Router();
 const request = require('request')
-
+const axios = require('axios'); // to do requests via await/async.
 const { pgp, db } = require('../routes/db');
 
 async function handleTopic(req, res) {
@@ -17,15 +17,14 @@ async function handleTopic(req, res) {
     if (req.body.payload.hasOwnProperty('actionItem')) {
         console.log(req.body)
         await handleActionItem(req, res, meeting_id)
-    }
-    else if (req.body.payload.hasOwnProperty('cmd')) {
+    } else if (req.body.payload.hasOwnProperty('cmd')) {
         await handleCmd(req, res, meeting_id)
     }
 }
 
 async function handleActionItem(req, res, meeting_id) {
     console.log("inside handleActionItem. Channel name: " + req.body.payload.actionItem.value)
-    // TODO: check if the meeting is still active.
+        // TODO: check if the meeting is still active.
 
     // Create channel, if needed and get channel id.
     const [channel_id, channel_owner_id] = await getChannelInfo(req, res)
@@ -43,14 +42,28 @@ async function getChannelInfo(req, res) {
 
     const channel_ids = await db.any('SELECT channel_id, channel_owner_id from channels where channel_name = $1 LIMIT 1', [req.body.payload.actionItem.value])
     if (channel_ids.length != 0) {
-        return [ channel_ids[0]["channel_id"], channel_ids[0]["channel_owner_id"] ]
+        return [channel_ids[0]["channel_id"], channel_ids[0]["channel_owner_id"]]
     }
     return ['', '']
 }
 
 async function createChannel(req, meeting_id) {
-    // TODO: Implementation
+    let payload = { name: req.body.payload.actionItem.value, type: 2 };
 
+    let res = await axios.post('https://api.zoom.us/v2/chat/users/' + req.body.payload.userId + '/channels', payload, {
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer ' + req.body.oauth2_access_token
+        }
+    });
+
+    let data = res.data;
+    console.log("Successfully created channel:", data);
+
+    // Insert details to DB.
+    const insert_result = await db.any(
+        'INSERT INTO channels (channel_id, channel_name, channel_topic, channel_owner_id, meeting_id)  VALUES ($1, $2, $3, $4, $5)', [data.id, data.name, getTopic(req.body.payload.actionItem.value), req.body.payload.userId, meeting_id]
+    )
 }
 
 async function broadCastToAllUsersAboutChannel(req, meeting_id) {
@@ -63,6 +76,11 @@ async function addUserToChannel(req, user_id, channel_id, channel_owner_id) {
 
 function deleteChatMessage(req, res) {
     // TODO: Implementation
+}
+
+function getTopic(button_value) {
+    // Sample button value:-  "homework (72719657897)"
+    return button_value.split(' (')[0].trim()
 }
 
 async function handleCmd(req, res, meeting_id) {
@@ -102,30 +120,25 @@ function sendChatbotMessage(req, toJid, buttonText, buttonValue, message) {
                     "type": "message",
                     "text": message
                 },
-                "body": [
-                    {
-                        "type": "section",
-                        "sections": [
-                            {
-                                "type": "message",
-                                "style": {
-                                    "bold": true
-                                },
-                                "text": buttonText
+                "body": [{
+                    "type": "section",
+                    "sections": [{
+                            "type": "message",
+                            "style": {
+                                "bold": true
                             },
-                            {
-                                "type": "actions",
-                                "items": [
-                                    {
-                                        "value": buttonValue,
-                                        "style": "Primary",
-                                        "text": "Join"
-                                    }
-                                ]
-                            }
-                        ]
-                    }
-                ]
+                            "text": buttonText
+                        },
+                        {
+                            "type": "actions",
+                            "items": [{
+                                "value": buttonValue,
+                                "style": "Primary",
+                                "text": "Join"
+                            }]
+                        }
+                    ]
+                }]
             }
         },
         headers: {
@@ -151,16 +164,14 @@ function sendChatbotErrorMessage(errorMessage, req, res) {
             'to_jid': req.body.payload.toJid,
             'account_id': req.body.payload.accountId,
             'content': {
-                'body': [
-                    {
-                        'type': 'section',
-                        'sidebar_color': '#D72638',
-                        'sections': [{
-                            'type': 'message',
-                            'text': errorMessage
-                        }]
-                    }
-                ]
+                'body': [{
+                    'type': 'section',
+                    'sidebar_color': '#D72638',
+                    'sections': [{
+                        'type': 'message',
+                        'text': errorMessage
+                    }]
+                }]
             }
         },
         headers: {
