@@ -67,7 +67,19 @@ async function createChannel(req, meeting_id) {
 }
 
 async function broadCastToAllUsersAboutChannel(req, meeting_id) {
-    // TODO: Implementation
+    console.log("inside broadCastToAllUsersAboutChannel")
+    let meeting_name = await getMeetingNameForMeetingId(meeting_id)
+    if (meeting_name == '') {
+        return;
+    }
+
+    let users = await getMeetingUsers(meeting_id, req.body.payload.userId)
+    let message = `A new channel for below topic has been created in meeting ${meeting_name}`
+    console.log(message)
+    for (let ind in users) {
+        let user_jid = users[ind] + "@xmpp.zoom.us"
+        sendChatbotMessage(req, user_jid, getTopic(req.body.payload.actionItem.value), req.body.payload.actionItem.value, message)
+    }
 }
 
 async function addUserToChannel(req, user_id, channel_id, channel_owner_id) {
@@ -81,6 +93,26 @@ function deleteChatMessage(req, res) {
 function getTopic(button_value) {
     // Sample button value:-  "homework (72719657897)"
     return button_value.split(' (')[0].trim()
+}
+
+async function getMeetingUsers(meeting_id, except_userid) {
+    console.log("inside getMeetingUsers. meeting_id: ", meeting_id)
+
+    const result = await db.any('SELECT user_id from users where meeting_id = $1 and user_id != $2', [meeting_id, except_userid])
+    console.log(result)
+    const users = (result).map(x => x["user_id"]);
+    return users
+}
+
+
+async function getMeetingNameForMeetingId(meeting_id) {
+    console.log("inside getMeetingNameForMeetingId")
+
+    const meeting_names = await db.any('SELECT meeting_name from meetings where meeting_id = $1 LIMIT 1', [meeting_id])
+    if (meeting_names.length == 0) {
+        return ''
+    }
+    return meeting_names[0]["meeting_name"]
 }
 
 async function handleCmd(req, res, meeting_id) {
