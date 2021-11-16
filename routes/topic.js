@@ -105,7 +105,26 @@ async function addUserToChannel(req, user_id, channel_id, channel_owner_id) {
 }
 
 function deleteChatMessage(req, res) {
-    // TODO: Implementation
+    console.log("inside deleteChatMessage. Message id: ", req.body.payload.messageId)
+    request({
+        url: 'https://api.zoom.us/v2/im/chat/messages/' + req.body.payload.messageId,
+        method: 'DELETE',
+        json: true,
+        body: {
+            'robot_jid': process.env.zoom_bot_jid,
+            'account_id': req.body.payload.accountId
+        },
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer ' + req.body.chatbot_access_token
+        }
+    }, (error, httpResponse, body) => {
+        if (error) {
+            console.log('Error sending chat.', error)
+        } else {
+            console.log(body)
+        }
+    })
 }
 
 function getTopic(button_value) {
