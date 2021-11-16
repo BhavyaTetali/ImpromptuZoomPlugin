@@ -83,7 +83,25 @@ async function broadCastToAllUsersAboutChannel(req, meeting_id) {
 }
 
 async function addUserToChannel(req, user_id, channel_id, channel_owner_id) {
-    // TODO: Implementation
+    email = await getEmailForUser(req, user_id)
+    if (email == '') {
+        return
+    }
+    console.log("inviting user to channel. user_id: " + user_id + ", email: " + email + ", channel_id: " + channel_id + ", channel_owner_id: " + channel_owner_id)
+
+    let payload = { members: [{email: email}] };
+    try {
+        let res = await axios.post('https://api.zoom.us/v2/chat/users/' + channel_owner_id + '/channels/' + channel_id + '/members', payload, {
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': 'Bearer ' + req.body.oauth2_access_token
+            }
+        });
+        console.log("Successfully invited user " + user_id + " to channel " + channel_id);
+    }
+    catch (error) {
+        console.log(error.response.data)
+    }
 }
 
 function deleteChatMessage(req, res) {
@@ -134,6 +152,26 @@ async function getCurrentMeetingIdForUser(req) {
         return ''
     }
     return meeting_ids[0]["meeting_id"]
+}
+
+async function getEmailForUser(req, user_id) {
+    console.log("inside getEmailForUser. user_id: " + user_id)
+    try {
+        const config = {
+            method: 'get',
+            url: 'https://api.zoom.us/v2/users/' + user_id,
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': 'Bearer ' + req.body.oauth2_access_token
+            }
+        }
+        let axios_res2 = await axios(config);
+        return axios_res2.data.email
+    }
+    catch (error) {
+        console.log(error.response.data)
+    }
+    return ''
 }
 
 function sendChatbotMessage(req, toJid, buttonText, buttonValue, message) {
