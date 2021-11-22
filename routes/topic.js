@@ -2,6 +2,11 @@ var express = require('express');
 var router = express.Router();
 const request = require('request')
 const axios = require('axios'); // to do requests via await/async.
+sw = require('stopword')
+const customStopwords = ['talk', 'discuss', 'discussion']
+var WordPOS = require('wordpos'),
+wordpos = new WordPOS();
+
 const { pgp, db } = require('../routes/db');
 
 async function handleTopic(req, res) {
@@ -17,14 +22,15 @@ async function handleTopic(req, res) {
     if (req.body.payload.hasOwnProperty('actionItem')) {
         console.log(req.body)
         await handleActionItem(req, res, meeting_id)
-    } else if (req.body.payload.hasOwnProperty('cmd')) {
+    }
+    else if (req.body.payload.hasOwnProperty('cmd')) {
         await handleCmd(req, res, meeting_id)
     }
 }
 
 async function handleActionItem(req, res, meeting_id) {
     console.log("inside handleActionItem. Channel name: " + req.body.payload.actionItem.value)
-        // TODO: check if the meeting is still active.
+    // TODO: check if the meeting is still active.
 
     // Create channel, if needed and get channel id.
     const [channel_id, channel_owner_id] = await getChannelInfo(req, res)
@@ -42,7 +48,7 @@ async function getChannelInfo(req, res) {
 
     const channel_ids = await db.any('SELECT channel_id, channel_owner_id from channels where channel_name = $1 LIMIT 1', [req.body.payload.actionItem.value])
     if (channel_ids.length != 0) {
-        return [channel_ids[0]["channel_id"], channel_ids[0]["channel_owner_id"]]
+        return [ channel_ids[0]["channel_id"], channel_ids[0]["channel_owner_id"] ]
     }
     return ['', '']
 }
@@ -62,7 +68,8 @@ async function createChannel(req, meeting_id) {
 
     // Insert details to DB.
     const insert_result = await db.any(
-        'INSERT INTO channels (channel_id, channel_name, channel_topic, channel_owner_id, meeting_id)  VALUES ($1, $2, $3, $4, $5)', [data.id, data.name, getTopic(req.body.payload.actionItem.value), req.body.payload.userId, meeting_id]
+        'INSERT INTO channels (channel_id, channel_name, channel_topic, channel_owner_id, meeting_id)  VALUES ($1, $2, $3, $4, $5)',
+        [data.id, data.name, getTopic(req.body.payload.actionItem.value), req.body.payload.userId, meeting_id]
     )
 }
 
@@ -127,11 +134,6 @@ function deleteChatMessage(req, res) {
     })
 }
 
-function getTopic(button_value) {
-    // Sample button value:-  "homework (72719657897)"
-    return button_value.split(' (')[0].trim()
-}
-
 async function getMeetingUsers(meeting_id, except_userid) {
     console.log("inside getMeetingUsers. meeting_id: ", meeting_id)
 
@@ -140,7 +142,6 @@ async function getMeetingUsers(meeting_id, except_userid) {
     const users = (result).map(x => x["user_id"]);
     return users
 }
-
 
 async function getMeetingNameForMeetingId(meeting_id) {
     console.log("inside getMeetingNameForMeetingId")
@@ -152,15 +153,30 @@ async function getMeetingNameForMeetingId(meeting_id) {
     return meeting_names[0]["meeting_name"]
 }
 
+function getTopic(button_value) {
+    // Sample button value:-  "homework (72719657897)"
+    return button_value.split(' (')[0].trim()
+}
+
+function removeStopWords(sentence) {
+    const newString = sw.removeStopwords(sentence.split(' '), [...sw.en, ...customStopwords])
+    return newString.join(' ')
+}
+
 async function handleCmd(req, res, meeting_id) {
-    topic = req.body.payload.cmd
-    console.log("inside handleCmd. Cmd: " + topic)
+    sentence = req.body.payload.cmd
+    console.log("inside handleCmd. Cmd: " + sentence)
 
-    // TODO: Process cmd value using machine learning to extract topics.
-
-    //button_value = topic + " (" + meeting_id + ")"
-    button_value = topic
-    sendChatbotMessage(req, req.body.payload.toJid, topic, button_value, "Would you like to join below channel?")
+    sentence_without_stop_words = removeStopWords(sentence)
+    console.log("inside handleCmd. Cmd: " + sentence_without_stop_words)
+    wordpos.getNouns(sentence_without_stop_words, function(topics){
+        console.log(topics);
+        for (const topic of topics) {
+            //button_value = topic + " (" + meeting_id + ")"
+            button_value = topic
+            sendChatbotMessage(req, req.body.payload.toJid, topic, button_value, "Would you like to join below channel?")
+        }
+    });
 }
 
 async function getCurrentMeetingIdForUser(req) {
@@ -209,25 +225,30 @@ function sendChatbotMessage(req, toJid, buttonText, buttonValue, message) {
                     "type": "message",
                     "text": message
                 },
-                "body": [{
-                    "type": "section",
-                    "sections": [{
-                            "type": "message",
-                            "style": {
-                                "bold": true
+                "body": [
+                    {
+                        "type": "section",
+                        "sections": [
+                            {
+                                "type": "message",
+                                "style": {
+                                    "bold": true
+                                },
+                                "text": buttonText
                             },
-                            "text": buttonText
-                        },
-                        {
-                            "type": "actions",
-                            "items": [{
-                                "value": buttonValue,
-                                "style": "Primary",
-                                "text": "Join"
-                            }]
-                        }
-                    ]
-                }]
+                            {
+                                "type": "actions",
+                                "items": [
+                                    {
+                                        "value": buttonValue,
+                                        "style": "Primary",
+                                        "text": "Join"
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                ]
             }
         },
         headers: {
@@ -253,14 +274,16 @@ function sendChatbotErrorMessage(errorMessage, req, res) {
             'to_jid': req.body.payload.toJid,
             'account_id': req.body.payload.accountId,
             'content': {
-                'body': [{
-                    'type': 'section',
-                    'sidebar_color': '#D72638',
-                    'sections': [{
-                        'type': 'message',
-                        'text': errorMessage
-                    }]
-                }]
+                'body': [
+                    {
+                        'type': 'section',
+                        'sidebar_color': '#D72638',
+                        'sections': [{
+                            'type': 'message',
+                            'text': errorMessage
+                        }]
+                    }
+                ]
             }
         },
         headers: {
